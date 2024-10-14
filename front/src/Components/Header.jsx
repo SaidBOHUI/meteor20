@@ -25,7 +25,6 @@ const navItems = ["Home", "About", "Contact"];
 const Header = (props) => {
 	const { window } = props;
 	const [mobileOpen, setMobileOpen] = React.useState(false);
-	const navigate = useNavigate(); // Utiliser useNavigate ici
 
 	const handleDrawerToggle = () => {
 		setMobileOpen((prevState) => !prevState);
@@ -55,7 +54,7 @@ const Header = (props) => {
 	return (
 		<Box sx={{ display: "flex" }}>
 			<CssBaseline />
-			<AppBar component="nav" sx={{ backgroundColor: "#660C0B" }}>
+			<AppBar component="nav" sx={{ backgroundColor: "transparent" }}>
 			{/* <AppBar component="nav" sx={{ backgroundColor: "#DF921A" }}> */}
 				<Toolbar>
 					<IconButton
