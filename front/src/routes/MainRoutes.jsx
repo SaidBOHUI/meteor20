@@ -1,13 +1,14 @@
 //Routeur
 import * as React from "react";
 import { Navigate, Route, Routes } from "react-router";
-import HomePage from "../pages/HomePage";
+import AsteroidCreationAndFetch from "../pages/AsteroidCreationAndFetch";
+
 
 const MainRoutes = () => {
 
 	return (
 		<Routes>
-			<Route path="/" element={<HomePage />} />
+			<Route path="/" element={<AsteroidCreationAndFetch />} />
 		</Routes>
 	);
 };
