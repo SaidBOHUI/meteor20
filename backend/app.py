@@ -103,5 +103,58 @@ def get_asteroids():
         "asteroids": asteroids
     }), 200
 
+class AsteroidSchema(Schema):
+    x = fields.Float(required=True)  # Position X
+    y = fields.Float(required=True)  # Position Y
+    z = fields.Float(required=True)  # Position Z
+    vx = fields.Float(required=True)  # Velocity X
+    vy = fields.Float(required=True)  # Velocity Y
+    vz = fields.Float(required=True)  # Velocity Z
+    size = fields.Float(required=True)  # Size in kilometers
+    mass = fields.Float(required=True)  # Mass in kilograms
+
+asteroid_schema = AsteroidSchema()
+
+# Endpoint to create a new asteroid with user-defined parameters
+@app.route('/generate_asteroid', methods=['POST'])
+def create_asteroid():
+    json_data = request.get_json()
+
+    # Validate request data against the schema
+    try:
+        data = asteroid_schema.load(json_data)
+    except ValidationError as err:
+        return jsonify(err.messages), 422
+
+    # Generate id and last_time_looked on the backend
+    asteroid_id = f"asteroid_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    last_time_looked = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+    asteroid_data = {
+        "id": asteroid_id,
+        "position": {
+            "x": data['x'],
+            "y": data['y'],
+            "z": data['z']
+        },
+        "velocity": {
+            "vx": data['vx'],
+            "vy": data['vy'],
+            "vz": data['vz']
+        },
+        "size": data['size'],
+        "mass": data['mass'],
+        "last_time_looked": last_time_looked
+    }
+
+    # Send the asteroid data to Kafka
+    producer.send('asteroid_data', asteroid_data)
+    producer.flush()
+
+    return jsonify({
+        "message": "Asteroid created and sent to Kafka",
+        "asteroid": asteroid_data
+    }), 200
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5550)
