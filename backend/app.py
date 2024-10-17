@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify
 from kafka import KafkaProducer, KafkaConsumer
 from marshmallow import Schema, fields, ValidationError
+from pyspark.ml.classification import LogisticRegressionModel
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import VectorAssembler
 from flask_cors import CORS
 import json
 import random
@@ -155,6 +158,36 @@ def create_asteroid():
         "message": "Asteroid created and sent to Kafka",
         "asteroid": asteroid_data
     }), 200
+
+# Initialize Spark session
+spark = SparkSession.builder \
+    .appName("AsteroidPredictionService") \
+    .getOrCreate()
+
+# Load the trained model from HDFS
+model = LogisticRegressionModel.load("hdfs://namenode:9000/user/spark/models/asteroid_collision_model")
+
+# Prediction API
+@app.route('/predict_collision', methods=['POST'])
+def predict_collision():
+    data = request.get_json()
+
+    # Convert input data to Spark DataFrame
+    asteroid_df = spark.createDataFrame([data])
+
+    # Prepare features for prediction
+    assembler = VectorAssembler(
+        inputCols=["position.x", "position.y", "position.z", "velocity.vx", "velocity.vy", "velocity.vz", "size", "mass"],
+        outputCol="features"
+    )
+    features_df = assembler.transform(asteroid_df)
+
+    # Make a prediction
+    prediction = model.transform(features_df)
+    predicted_collision = prediction.select("prediction").collect()[0][0]
+
+    # Return the result
+    return jsonify({"collision_prediction": predicted_collision})
  
 @app.route('/', methods=['GET'])
 def home():
