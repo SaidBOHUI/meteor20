@@ -15,3 +15,5 @@ COPY . .
 
 # Définir la commande par défaut
 CMD ["python", "app.py"]
+
+

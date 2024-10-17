@@ -21,10 +21,8 @@
 
 // export default HomePage
 
-
-
-import { Box } from '@mui/material'
-import React, { useEffect, useRef } from 'react'
+import { Box, TextField, Button, Typography } from '@mui/material'
+import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import Banner from '../assets/darkSpace.webp'
 import lilMeteor from '../assets/meteor.png'
@@ -34,10 +32,31 @@ import ExplosionGif from '../assets/collision.gif'
 const HomePage = () => {
   const canvasRef = useRef(null)
   const positionsRef = useRef([])
+  const [numAsteroids, setNumAsteroids] = useState(0)
+  const [responseMessage, setResponseMessage] = useState('')
+
+  const handleGenerateAsteroids = async (e) => {
+    e.preventDefault()
+    try {
+      const response = await fetch('http://localhost:5550/generate_asteroids', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ num_asteroids: Number(numAsteroids) }),
+      })
+
+      const data = await response.json()
+      setResponseMessage(data.message)
+    } catch (error) {
+      console.error('Error generating asteroids:', error)
+      setResponseMessage('Failed to generate asteroids')
+    }
+  }
 
   useEffect(() => {
     // Connexion WebSocket
-    const socket = new WebSocket('ws://localhost:8080')
+    const socket = new WebSocket('ws://localhost:5550')
 
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data)
@@ -56,55 +75,42 @@ const HomePage = () => {
 
     camera.position.z = 10
 
-    // Charger les textures des comètes et de l'explosion
     const textureLoader = new THREE.TextureLoader()
     const cometTexture = textureLoader.load(lilMeteor)
     const explosionTexture = textureLoader.load(ExplosionGif)
-
-    // Map pour stocker les sprites des comètes
     const cometsMap = new Map()
 
-    // Fonction pour détecter les collisions (crash)
     const isCollision = (cometX, cometY) => {
-      const threshold = 50 // Ajuste le seuil de distance pour la collision
+      const threshold = 50
       return Math.abs(cometX) < threshold && Math.abs(cometY) < threshold
     }
 
-    // Fonction pour mettre à jour et afficher les comètes
     const updateComets = () => {
       positionsRef.current.forEach(({ id, x, y }) => {
-        // Vérifie si la comète existe déjà, sinon crée un nouveau sprite
         if (!cometsMap.has(id)) {
           const material = new THREE.SpriteMaterial({ map: cometTexture })
           const sprite = new THREE.Sprite(material)
-          sprite.scale.set(50, 50, 1) // Taille de la comète
-          sprite.position.z = 0 // Assure que les comètes sont en arrière-plan
+          sprite.scale.set(50, 50, 1)
+          sprite.position.z = 0
           scene.add(sprite)
           cometsMap.set(id, sprite)
         }
 
-        // Met à jour la position du sprite correspondant à l'ID de la comète
         const sprite = cometsMap.get(id)
 
-        // Vérifie la collision avec la Terre
         if (isCollision(x, y)) {
-          // Affiche l'animation d'explosion à la place de la comète
           const explosionMaterial = new THREE.SpriteMaterial({ map: explosionTexture })
           sprite.material = explosionMaterial
-          sprite.scale.set(100, 100, 1) // Ajuste la taille de l'explosion
-          
-          // Retire l'explosion après un certain temps
+          sprite.scale.set(100, 100, 1)
           setTimeout(() => {
             scene.remove(sprite)
             cometsMap.delete(id)
-          }, 1000) // Durée de l'animation en millisecondes
+          }, 1000)
         } else {
-          // Met à jour la position de la comète si pas de collision
           sprite.position.set(x, -y, 0)
         }
       })
 
-      // Supprime les sprites des comètes qui ne sont plus dans les positions
       cometsMap.forEach((sprite, id) => {
         if (!positionsRef.current.some(meteor => meteor.id === id)) {
           scene.remove(sprite)
@@ -113,7 +119,6 @@ const HomePage = () => {
       })
     }
 
-    // Fonction pour animer les comètes
     const animate = () => {
       updateComets()
       renderer.render(scene, camera)
@@ -122,9 +127,20 @@ const HomePage = () => {
 
     animate()
 
+    const handleResize = () => {
+      camera.left = window.innerWidth / -2
+      camera.right = window.innerWidth / 2
+      camera.top = window.innerHeight / 2
+      camera.bottom = window.innerHeight / -2
+      camera.updateProjectionMatrix()
+      renderer.setSize(window.innerWidth, window.innerHeight)
+    }
+
+    window.addEventListener('resize', handleResize)
     return () => {
       socket.close()
       renderer.dispose()
+      window.removeEventListener('resize', handleResize)
     }
   }, [])
 
@@ -140,6 +156,35 @@ const HomePage = () => {
         position: 'relative',
       }}
     >
+      <Box
+        sx={{
+          position: 'absolute',
+          bottom: 16,
+          right: 16,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          padding: 2,
+          borderRadius: 4,
+          zIndex: 10,
+        }}
+      >
+        <form onSubmit={handleGenerateAsteroids}>
+          <TextField
+            label="Number of Asteroids"
+            type="number"
+            value={numAsteroids}
+            onChange={(e) => setNumAsteroids(e.target.value)}
+            sx={{ marginBottom: 1 }}
+          />
+          <Button type="submit" variant="contained" color="primary">
+            Generate
+          </Button>
+          {responseMessage && (
+            <Typography variant="body2" color="white" sx={{ marginTop: 1 }}>
+              {responseMessage}
+            </Typography>
+          )}
+        </form>
+      </Box>
       <img
         src={EarthGif}
         alt="Terre"
@@ -155,7 +200,15 @@ const HomePage = () => {
       />
       <canvas
         ref={canvasRef}
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
       />
     </Box>
   )

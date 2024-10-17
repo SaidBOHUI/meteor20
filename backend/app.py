@@ -5,13 +5,19 @@ from flask_cors import CORS
 import json
 import random
 from datetime import datetime, timezone
+from flask_socketio import SocketIO
+import eventlet
+
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+if __name__ == '__main__':
+    socketio.run(app, host='0.0.0.0', port=5550)
 
-# Initialize Kafka Producer
+CORS(app)
+
 producer = KafkaProducer(
-    bootstrap_servers='kafka:9092',  # Kafka broker address
+    bootstrap_servers='kafka:9092', 
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
@@ -115,6 +121,10 @@ class AsteroidSchema(Schema):
 
 asteroid_schema = AsteroidSchema()
 
+@app.route('/')
+def home():
+    return jsonify({"message": "Backend is running!"}), 200
+
 # Endpoint to create a new asteroid with user-defined parameters
 @app.route('/generate_asteroid', methods=['POST'])
 def create_asteroid():
@@ -123,6 +133,7 @@ def create_asteroid():
     # Validate request data against the schema
     try:
         data = asteroid_schema.load(json_data)
+        print(data)
     except ValidationError as err:
         return jsonify(err.messages), 422
 
