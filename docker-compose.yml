@@ -1,4 +1,4 @@
-# version: "3"
+version: "3"
 
 services:
   namenode:
@@ -113,7 +113,21 @@ services:
       - kafka
       - zookeeper
 
+#Pas sure
+  model-trainer:
+    build: ./Model
+    container_name: model-trainer
+    volumes:
+      - ./Model/saved:/app/saved
+      - ./Model/training:/app/training
+    depends_on:
+      - kafka  
+      - spark-master
+    command: python /app/training/train_model.py
+
 volumes:
   hadoop_namenode:
   hadoop_datanode:
   hadoop_historyserver:
+  saved_model: 
+  training_data:  
