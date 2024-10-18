@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, avg, explode, window, current_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, ArrayType
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, TimestampType, MapType
 
 # Configuration de la session Spark
 spark = SparkSession.builder \
@@ -10,15 +10,22 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # Schéma des données utilisateur
-user_schema = StructType([
+AsteroidRequestSchema = StructType([
     StructField("id", StringType(), True),
-    StructField("nom", StringType(), True),
-    StructField("prenom", StringType(), True),
-    StructField("age", IntegerType(), True),
-    StructField("email", StringType(), True),
-    StructField("preferences", ArrayType(StringType()), True),
-    StructField("solde", FloatType(), True),
-    StructField("ne", IntegerType(), True)
+    StructField("position", StructType([
+        StructField("x", DoubleType(), True),
+        StructField("y", DoubleType(), True),
+        StructField("z", DoubleType(), True)
+    ]), True),
+    StructField("velocity", StructType([
+        StructField("vx", DoubleType(), True),
+        StructField("vy", DoubleType(), True),
+        StructField("vz", DoubleType(), True)
+    ]), True),
+    StructField("size", DoubleType(), True), 
+    StructField("mass", DoubleType(), True),
+    StructField("collision", DoubleType(), True),
+    StructField("last_time_looked", StringType(), True) 
 ])
 
 # Consommation des messages Kafka
@@ -31,7 +38,7 @@ df = spark \
 
 # Déserialiser les messages Kafka
 user_df = df.selectExpr("CAST(value AS STRING)", "timestamp") \
-    .select(from_json(col("value"), user_schema).alias("data"), col("timestamp")) \
+    .select(from_json(col("value"), AsteroidRequestSchema).alias("data"), col("timestamp")) \
     .select("data.*", "timestamp")
 
 # Ajouter un watermark pour gérer les données tardives

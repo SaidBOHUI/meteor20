@@ -1,164 +1,134 @@
+from gevent import monkey
+monkey.patch_all()  # Use gevent instead of eventlet
+
 from flask import Flask, request, jsonify
 from kafka import KafkaProducer, KafkaConsumer
 from marshmallow import Schema, fields, ValidationError
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 import json
 import random
 from datetime import datetime, timezone
- 
+
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
- 
+CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent", logger=True, engineio_logger=True)
+
 # Initialize Kafka Producer
 producer = KafkaProducer(
-    bootstrap_servers='kafka:9092',  # Kafka broker address
+    bootstrap_servers='kafka:9092',
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
- 
-# Kafka Consumer: listens to asteroid_data topic
+
+# Kafka Consumer to listen to asteroid_data topic
 consumer = KafkaConsumer(
     'asteroid_data',
     bootstrap_servers='kafka:9092',
-    value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+    value_deserializer=lambda x: json.loads(x.decode('utf-8')),
+    auto_offset_reset='earliest',
+    enable_auto_commit=True
 )
- 
-# Schema to validate the asteroid generation request
+
+# Schema to validate asteroid data
 class AsteroidRequestSchema(Schema):
-    num_asteroids = fields.Int(required=True)  # Number of asteroids to generate
- 
+    num_asteroids = fields.Int(required=True)
+
 asteroid_request_schema = AsteroidRequestSchema()
- 
-# Function to generate random asteroid data
+
+# Generate asteroid data
 def generate_asteroid_data(request_id, asteroid_index):
     asteroid_data = {
-        "id": f"asteroid_{request_id}_{asteroid_index:03d}",  # Unique Asteroid ID with request_id and index
+        "id": f"asteroid_{request_id}_{asteroid_index:03d}",
         "position": {
-            "x": round(random.uniform(-500000.0, 500000.0), 2),  # Random position in space
-            "y": round(random.uniform(-500000.0, 500000.0), 2),
-            "z": round(random.uniform(-500000.0, 500000.0), 2),
+            "x": round(random.uniform(-500.0, 500.0), 2),
+            "y": round(random.uniform(-500.0, 500.0), 2),
+            "z": round(random.uniform(-500.0, 500.0), 2),
         },
         "velocity": {
-            "vx": round(random.uniform(-50.0, 50.0), 2),  # Random velocity vector components
-            "vy": round(random.uniform(-50.0, 50.0), 2),
-            "vz": round(random.uniform(-50.0, 50.0), 2),
+            "vx": round(random.uniform(-12.0, 12.0), 2),
+            "vy": round(random.uniform(-12.0, 12.0), 2),
+            "vz": round(random.uniform(-12.0, 12.0), 2),
         },
-        "size": round(random.uniform(0.1, 10.0), 2),  # Random size in kilometers
-        "mass": round(random.uniform(1e12, 1e15), 2),  # Random mass in kilograms
-        "last_time_looked": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')  # Current UTC time
+        "size": round(random.uniform(0.1, 10.0), 2),
+        "mass": round(random.uniform(1e12, 1e15), 2),
+        "last_time_looked": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     }
     return asteroid_data
- 
+
+# Endpoint to generate multiple asteroids
 @app.route('/generate_asteroids', methods=['POST'])
 def create_asteroids():
     json_data = request.get_json()
- 
-    # Validate request data against the schema
     if not json_data:
         return jsonify({"message": "No input data provided"}), 400
- 
+
     try:
         data = asteroid_request_schema.load(json_data)
     except ValidationError as err:
         return jsonify(err.messages), 422
- 
-    # Number of asteroids to generate
+
     num_asteroids = data['num_asteroids']
- 
-    # Generate a unique request ID based on the current timestamp
     request_id = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
- 
+
     asteroid_list = []
- 
-    # Generate the specified number of asteroids
     for asteroid_index in range(1, num_asteroids + 1):
         asteroid_data = generate_asteroid_data(request_id, asteroid_index)
-        producer.send('asteroid_data', asteroid_data)  # Send each asteroid to Kafka
-        asteroid_list.append(asteroid_data)  # Append to the list for response
- 
-    producer.flush()  # Ensure all messages are sent to Kafka
- 
+        producer.send('asteroid_data', asteroid_data)
+        asteroid_list.append(asteroid_data)
+
+    producer.flush()
     return jsonify({
         "message": f"{num_asteroids} asteroids generated and sent to Kafka",
         "asteroids": asteroid_list
     }), 200
- 
-@app.route('/get_asteroids', methods=['GET'])
-def get_asteroids():
+
+@app.route('/')
+def index():
+    return jsonify({"message": "WebSocket server running"}), 200
+
+@app.route('/asteroids', methods=['GET'])
+def get_all_asteroids():
     asteroids = []
- 
-    # Poll for messages from Kafka (timeout in milliseconds)
-    messages = consumer.poll(timeout_ms=1000, max_records=10)
- 
-    # Process the polled messages
-    for topic_partition, msg_list in messages.items():
-        for message in msg_list:
-            asteroid = message.value  # Get the asteroid data from the Kafka message
-            asteroids.append(asteroid)
- 
+    
+    # Poll the Kafka consumer to fetch all asteroid messages
+    messages = consumer.poll(timeout_ms=1000, max_records=50)
+
+    for topic_partition, message_list in messages.items():
+        for message in message_list:
+            asteroid_data = message.value
+            asteroids.append(asteroid_data)
+
     if len(asteroids) == 0:
-        return jsonify({"message": "No asteroids found"}), 404
- 
+        return jsonify({"message": "No asteroid data found"}), 404
+
     return jsonify({
-        "message": "Latest asteroids retrieved from Kafka",
+        "message": "Asteroid data retrieved successfully",
         "asteroids": asteroids
     }), 200
- 
-class AsteroidSchema(Schema):
-    x = fields.Float(required=True)  # Position X
-    y = fields.Float(required=True)  # Position Y
-    z = fields.Float(required=True)  # Position Z
-    vx = fields.Float(required=True)  # Velocity X
-    vy = fields.Float(required=True)  # Velocity Y
-    vz = fields.Float(required=True)  # Velocity Z
-    size = fields.Float(required=True)  # Size in kilometers
-    mass = fields.Float(required=True)  # Mass in kilograms
- 
-asteroid_schema = AsteroidSchema()
- 
-# Endpoint to create a new asteroid with user-defined parameters
-@app.route('/generate_asteroid', methods=['POST'])
-def create_asteroid():
-    json_data = request.get_json()
- 
-    # Validate request data against the schema
-    try:
-        data = asteroid_schema.load(json_data)
-    except ValidationError as err:
-        return jsonify(err.messages), 422
- 
-    # Generate id and last_time_looked on the backend
-    asteroid_id = f"asteroid_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
-    last_time_looked = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
- 
-    asteroid_data = {
-        "id": asteroid_id,
-        "position": {
-            "x": data['x'],
-            "y": data['y'],
-            "z": data['z']
-        },
-        "velocity": {
-            "vx": data['vx'],
-            "vy": data['vy'],
-            "vz": data['vz']
-        },
-        "size": data['size'],
-        "mass": data['mass'],
-        "last_time_looked": last_time_looked
-    }
- 
-    # Send the asteroid data to Kafka
-    producer.send('asteroid_data', asteroid_data)
-    producer.flush()
- 
-    return jsonify({
-        "message": "Asteroid created and sent to Kafka",
-        "asteroid": asteroid_data
-    }), 200
- 
-@app.route('/', methods=['GET'])
-def home():
-    return jsonify({"message": "Backend running"}), 200
- 
+
+# Kafka Consumer in real-time with WebSocket
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
+@socketio.on('start_stream')
+def start_stream():
+    socketio.start_background_task(stream_asteroid_data)
+
+def stream_asteroid_data():
+    while True:
+        messages = consumer.poll(timeout_ms=1000)
+        for topic_partition, message_list in messages.items():
+            for message in message_list:
+                asteroid_data = message.value
+                print(f"Kafka Message received: {asteroid_data}") 
+                socketio.emit('asteroid_update', asteroid_data)
+                print(f"Sent asteroid data via WebSocket: {asteroid_data}")  
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5550)
+    socketio.run(app, host='0.0.0.0', port=5550, debug=True, log_output=True)
