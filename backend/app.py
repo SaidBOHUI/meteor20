@@ -1,50 +1,48 @@
+import json
+import time
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO
 from kafka import KafkaProducer, KafkaConsumer
 from marshmallow import Schema, fields, ValidationError
 from flask_cors import CORS
-import json
 import random
 from datetime import datetime, timezone
 
 app = Flask(__name__)
 CORS(app, support_credentials=True) 
-# CORS(app, resources={r"/*": {"origins": "*"}})
-
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Initialize Kafka Producer
 producer = KafkaProducer(
-    bootstrap_servers='kafka:9092',  # Kafka broker address
+    # print("Producer Kafka IIN")
+    bootstrap_servers='kafka:9092',
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
-# Kafka Consumer: listens to asteroid_data topic
 consumer = KafkaConsumer(
+    # print("Consumer Kafka IIN")
     'asteroid_data',
     bootstrap_servers='kafka:9092',
     value_deserializer=lambda x: json.loads(x.decode('utf-8'))
 )
 
-# Schema to validate the asteroid generation request
+
 class AsteroidRequestSchema(Schema):
     num_asteroids = fields.Int(required=True)
 
 asteroid_request_schema = AsteroidRequestSchema()
 
-# Function to generate random asteroid data
-def generate_asteroid_data(request_id, asteroid_index):
+def generate_asteroid_data(request_id, asteroid_index, screen_width=1000, screen_height=1000):
     asteroid_data = {
         "id": f"asteroid_{request_id}_{asteroid_index:03d}",
         "position": {
-            "x": round(random.uniform(-500000.0, 500000.0), 2),
-            "y": round(random.uniform(-500000.0, 500000.0), 2),
-            "z": round(random.uniform(-500000.0, 500000.0), 2),
+            "x": round(random.uniform(-screen_width / 2, screen_width / 2), 2),
+            "y": round(random.uniform(-screen_height / 2, screen_height / 2), 2),
+            "z": 0, 
         },
         "velocity": {
             "vx": round(random.uniform(-50.0, 50.0), 2),
             "vy": round(random.uniform(-50.0, 50.0), 2),
-            "vz": round(random.uniform(-50.0, 50.0), 2),
+            "vz": 0, 
         },
         "size": round(random.uniform(0.1, 10.0), 2),
         "mass": round(random.uniform(1e12, 1e15), 2),
@@ -57,7 +55,6 @@ def create_asteroids():
     print("Enter in create_asteroids")
     json_data = request.get_json()
 
-    # Validate request data against the schema
     if not json_data:
         return jsonify({"message": "No input data provided"}), 400
 
@@ -71,7 +68,6 @@ def create_asteroids():
 
     asteroid_list = []
 
-    # Generate the specified number of asteroids
     for asteroid_index in range(1, num_asteroids + 1):
         asteroid_data = generate_asteroid_data(request_id, asteroid_index)
         producer.send('asteroid_data', asteroid_data)
@@ -84,12 +80,35 @@ def create_asteroids():
         "asteroids": asteroid_list
     }), 200
 
-# Function to consume Kafka messages and emit them via WebSocket
 def consume_asteroids():
-    for message in consumer:
-        asteroid_data = message.value
-        print(f"Received asteroid data: {asteroid_data}")
-        socketio.emit('asteroid_update', asteroid_data)
+    print("Consommateur Kafka démarré")
+    asteroids = {}
+
+    try:
+        for message in consumer:
+            asteroid_data = message.value
+            asteroid_id = asteroid_data["id"]
+            print(f"Received asteroid data: {asteroid_data}")
+            asteroids[asteroid_id] = asteroid_data
+
+        while True:
+            updated_asteroids = []
+            for asteroid_id, asteroid in asteroids.items():
+                time_step = 0.1 
+                new_x = asteroid["position"]["x"] + asteroid["velocity"]["vx"] * time_step
+                new_y = asteroid["position"]["y"] + asteroid["velocity"]["vy"] * time_step
+
+                asteroid["position"]["x"] = new_x
+                asteroid["position"]["y"] = new_y
+
+                updated_asteroids.append(asteroid)
+
+            # Envoyer les positions mises à jour à chaque cycle
+            socketio.emit('asteroid_update', {"asteroids": updated_asteroids})
+            time.sleep(0.5)
+
+    except Exception as e:
+        print(f"Erreur dans la consommation Kafka: {e}")
 
 @socketio.on('connect')
 def handle_connect():
@@ -104,5 +123,13 @@ def home():
     return jsonify({"message": "Backend running"}), 200
 
 if __name__ == '__main__':
-    socketio.start_background_task(consume_asteroids)
+    print("Démarrage de l'application backend en arrière plan...")
+    try:
+        print("Appel direct de la fonction consume_asteroids...")
+        socketio.start_background_task(consume_asteroids)  # Lancement de la tâche en arrière-plan
+        # consume_asteroids()
+        print("La fonction consume_asteroids a été appelée.")
+    except Exception as e:
+        print(f"Erreur lors du démarrage de la tâche consume_asteroids : {e}")
+    
     socketio.run(app, host='0.0.0.0', port=5550)

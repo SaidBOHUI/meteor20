@@ -7,10 +7,6 @@ WORKDIR /app
 # Copier les fichiers de configuration
 COPY requirements.txt requirements.txt
 
-# COPY wait_kafka.sh /wait_kafka.sh
-
-# RUN chmod +x /wait_kafka.sh
-
 # Installer les dépendances
 RUN pip install -r requirements.txt
 
