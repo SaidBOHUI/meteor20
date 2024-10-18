@@ -70,7 +70,7 @@ const HomePage = () => {
 
     const updateComets = () => {
       positionsRef.current.forEach(({ id, position, velocity, size }) => {
-        const { x, y } = position;
+        const { x, y, z } = position;
         let texture = cometTexture;
 
         if (size < 5) {
@@ -83,7 +83,7 @@ const HomePage = () => {
           const material = new THREE.SpriteMaterial({ map: texture });
           const sprite = new THREE.Sprite(material);
           sprite.scale.set(size * 20, size * 20, 1);
-          sprite.position.set(x, -y, 0);  // Set the initial position
+          sprite.position.set(x, -y, z);  // Set the initial position
           scene.add(sprite);
           cometsMap.set(id, { sprite, velocity });  // Store velocity for movement
         }
@@ -148,6 +148,12 @@ const HomePage = () => {
             type="number"
             value={numAsteroids}
             onChange={(e) => setNumAsteroids(e.target.value)}
+            InputLabelProps={{
+              style: { color: 'white' },
+            }}
+            InputProps={{
+              style: { color: 'white' },
+            }}
             sx={{ marginBottom: 1, color: 'text.primary' }}
           />
           <Button type="submit" variant="contained" color="primary">
