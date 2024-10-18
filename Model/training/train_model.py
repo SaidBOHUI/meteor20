@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import MinMaxScaler
 
 #générer les données d'entraînement
-def generate_asteroid_data(num_samples=1000):
+def generate_asteroid_data(num_samples=100000):
     position_x = np.random.uniform(-1e6, 1e6, num_samples)
     position_y = np.random.uniform(-1e6, 1e6, num_samples)
     position_z = np.random.uniform(-1e6, 1e6, num_samples)
@@ -84,7 +84,7 @@ def save_model(model, model_path=os.path.join('saved', 'model_v1.pkl')):
 
 if __name__ == "__main__":
     #On genere les données d'entraînement pour 1000 astéroïdes
-    asteroid_data = generate_asteroid_data(1000)
+    asteroid_data = generate_asteroid_data(100000)
     
     # chemin de sauvegarde
     training_data_dir = os.path.join("training", "training_data")
