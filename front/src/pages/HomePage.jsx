@@ -148,6 +148,12 @@ const HomePage = () => {
             type="number"
             value={numAsteroids}
             onChange={(e) => setNumAsteroids(e.target.value)}
+            InputLabelProps={{
+              style: { color: 'white' },
+            }}
+            InputProps={{
+              style: { color: 'white' },
+            }}
             sx={{ marginBottom: 1, color: 'text.primary' }}
           />
           <Button type="submit" variant="contained" color="primary">
