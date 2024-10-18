@@ -1,64 +1,66 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, avg, explode, window, current_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, ArrayType
+from pyspark.sql.types import StructType, StructField, StringType, FloatType, IntegerType
 
-# Configuration de la session Spark
+
 spark = SparkSession.builder \
     .appName("KafkaSparkConsumer") \
     .config("spark.master", "local[*]") \
     .config("spark.hadoop.fs.defaultFS", "hdfs://namenode:9000") \
     .getOrCreate()
 
-# Schéma des données utilisateur
-user_schema = StructType([
+asteroid_schema = StructType([
     StructField("id", StringType(), True),
-    StructField("nom", StringType(), True),
-    StructField("prenom", StringType(), True),
-    StructField("age", IntegerType(), True),
-    StructField("email", StringType(), True),
-    StructField("preferences", ArrayType(StringType()), True),
-    StructField("solde", FloatType(), True),
-    StructField("ne", IntegerType(), True)
+    StructField("position", StructType([
+        StructField("x", FloatType(), True),
+        StructField("y", FloatType(), True),
+        StructField("z", FloatType(), True)
+    ]), True),
+    StructField("velocity", StructType([
+        StructField("vx", FloatType(), True),
+        StructField("vy", FloatType(), True),
+        StructField("vz", FloatType(), True)
+    ]), True),
+    StructField("size", FloatType(), True),
+    StructField("mass", FloatType(), True),
+    StructField("last_time_looked", StringType(), True)
 ])
 
-# Consommation des messages Kafka
 df = spark \
     .readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", "kafka:9092") \
-    .option("subscribe", "user_topic") \
+    .option("subscribe", "asteroid_data") \
     .load()
 
-# Déserialiser les messages Kafka
-user_df = df.selectExpr("CAST(value AS STRING)", "timestamp") \
-    .select(from_json(col("value"), user_schema).alias("data"), col("timestamp")) \
+asteroid_df = df.selectExpr("CAST(value AS STRING)", "timestamp") \
+    .select(from_json(col("value"), asteroid_schema).alias("data"), col("timestamp")) \
     .select("data.*", "timestamp")
 
-# Ajouter un watermark pour gérer les données tardives
-user_df_with_watermark = user_df.withWatermark("timestamp", "10 minutes")
+asteroid_df_with_watermark = asteroid_df.withWatermark("timestamp", "10 minutes")
 
-# Calcul de la moyenne d'âge des utilisateurs avec watermark
-avg_age = user_df_with_watermark.groupBy(window(col("timestamp"), "10 minutes")).agg(avg(col("age")).alias("average_age"))
+avg_size = asteroid_df_with_watermark.groupBy(window(col("timestamp"), "10 minutes")).agg(avg(col("size")).alias("average_size"))
 
-# Distribution des préférences avec watermark
-preferences_exploded = user_df_with_watermark.select(explode(col("preferences")).alias("preference"), "timestamp")
-preference_distribution = preferences_exploded.groupBy(window(col("timestamp"), "10 minutes"), "preference").count()
+avg_velocity = asteroid_df_with_watermark.groupBy(window(col("timestamp"), "10 minutes")).agg(
+    avg(col("velocity.vx")).alias("avg_velocity_x"),
+    avg(col("velocity.vy")).alias("avg_velocity_y"),
+    avg(col("velocity.vz")).alias("avg_velocity_z")
+)
 
-# Écrire les résultats dans HDFS en Parquet
-query_avg_age = avg_age.writeStream \
+
+query_avg_size = avg_size.writeStream \
     .outputMode("append") \
     .format("parquet") \
-    .option("path", "/user/spark/average_age") \
-    .option("checkpointLocation", "/user/spark/average_age_checkpoint") \
+    .option("path", "hdfs://namenode:9092/asteroid_size") \
+    .option("checkpointLocation", "/user/spark/average_size_checkpoint") \
     .start()
 
-query_preference_distribution = preference_distribution.writeStream \
+query_avg_velocity = avg_velocity.writeStream \
     .outputMode("append") \
     .format("parquet") \
-    .option("path", "/user/spark/preference_distribution") \
-    .option("checkpointLocation", "/user/spark/preference_distribution_checkpoint") \
+    .option("path", "hdfs://namenode:9092/asteroid_velocity") \
+    .option("checkpointLocation", "/user/spark/average_velocity_checkpoint") \
     .start()
 
-# Attendre la fin des requêtes
-query_avg_age.awaitTermination()
-query_preference_distribution.awaitTermination()
+query_avg_size.awaitTermination()
+query_avg_velocity.awaitTermination()

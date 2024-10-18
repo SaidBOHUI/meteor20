@@ -35,12 +35,11 @@ const HomePage = () => {
 		}
 	}
 
-	// Fonction pour ajouter une comète de test
 	const handleAddTestComet = () => {
 		const testComet = {
 			id: "test_comet_001",
 			position: { x: 100, y: 150, z: 0 },
-			size: 8, // Taille ajustée pour la météorite de test
+			size: 8, 
 			mass: 1e12,
 		}
 
@@ -56,10 +55,6 @@ const HomePage = () => {
 
 		socket.on("asteroid_update", (data) => {
 			console.log("Received asteroid update:", data)
-			// positionsRef.current = [
-			// 	...positionsRef.current.filter((m) => m.id !== data.id),
-			// 	data,
-			// ]
 			positionsRef.current = data.asteroids;
 		})
 
